@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Warp Exchange</title>
+	<link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+	<link rel="stylesheet" href="https://unpkg.com/bootstrap@5.1.3/dist/css/bootstrap.min.css" />
+	<link rel="stylesheet" href="https://unpkg.com/bootstrap-icons@1.8.3/font/bootstrap-icons.css" />
+	<script src="https://unpkg.com/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+	<script src="https://unpkg.com/jquery@3.6.0/dist/jquery.min.js"></script>
+	<script src="https://unpkg.com/vue@2.7.4/dist/vue.js"></script>
+
+	{% block style %}
+	<style>
+	.example {
+		color: #000
+	}
+	</style>
+	{% endblock %}
+
+	{% block script %}
+	<script>
+	// script here
+	</script>
+	{% endblock %}
+
+</head>
+
+<body>
+	<!-- 导航栏 -->
+	<nav class="navbar navbar-expand-lg navbar-default bg-white border-bottom" style="background-color:#fff;position:fixed;top:0;left:0;right:0;z-index:100;">
+		<div class="container px-2">
+			<a class="navbar-brand d-none d-sm-block" style="font-size:1.2rem;" href="/">
+				<span><i class="bi bi-lightning"></i> Warp Exchange</span>
+			</a>
+			<a class="navbar-brand d-block d-sm-none" style="font-size:1.2rem;" href="/">
+				<span><i class="bi bi-lightning"></i></span>
+			</a>
+			{% if __profile__ != null %}
+			<ul id="navStatus" class="mr-2 navbar-nav navbar-right-wrap flex-row">
+				<!-- WebSocket连接状态 -->
+				<span class="x-ws-status x-ws-disconnected me-3 navbar-text text-muted"><i class="bi bi-wifi-off"></i></span>
+				<span class="x-ws-status x-ws-connected me-3 navbar-text text-success" style="display:none"><i class="bi bi-wifi"></i></span>
+				<span class="x-ws-status x-ws-connecting me-3 navbar-text text-info" style="display:none"><i class="bi bi-wifi-2"></i></span>
+
+				<span class="navbar-text d-none d-sm-block"><i class="bi bi-person"></i> {{ __profile__.name }}</span>
+				<span class="navbar-text d-block d-sm-none"><i class="bi bi-person"></i></span>
+				<li class="ms-2 nav-item"><a href="/signout" class="nav-link">Sign Out</a></li>
+			</ul>
+			{% endif %}
+		</div>
+	</nav>
+	<!-- // 导航栏 -->
+
+	<div class="container" style="margin-top: 57px; margin-bottom: 41px;">
+		{% block content %}
+		<p>content here</p>
+		{% endblock %}
+	</div>
+
+	<!-- 页脚 -->
+	<div class="container" style="background-color:#fff;position:fixed;bottom:0;left:0;right:0;z-index:100;">
+		<div class="pt-2 pb-2 text-center border-top">
+			<a href="https://www.liaoxuefeng.com/wiki/1252599548343744/1266263401691296" target="_blank">Learn How to Design</a>
+			&nbsp; &nbsp;
+			<a href="https://github.com/michaelliao/warpexchange" target="_blank">Source Code</a>
+			&nbsp; &nbsp;
+			<a href="https://www.gnu.org/licenses/gpl-3.0.txt" target="_blank">License</a>
+		</div>
+	</div>
+	<!-- // 页脚 -->
+</body>
+
+</html>

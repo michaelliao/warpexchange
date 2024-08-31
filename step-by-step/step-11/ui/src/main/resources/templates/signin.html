@@ -1,0 +1,45 @@
+{% extends("_base") %}
+
+{% block content %}
+<div class="row">
+	<div class="col-sm-12 col-md-6 col-lg-7">
+		{% include("_inc_highlights") %}
+	</div>
+	<div class="col-sm-12 col-md-6 col-lg-5">
+		<div class="card mt-2 mb-2">
+			<div class="card-header">
+				<ul class="nav nav-tabs card-header-tabs">
+					<li class="nav-item">
+						<a class="nav-link active" href="#0">Sign In</a>
+					</li>
+					<li class="nav-item">
+						<a class="nav-link" href="/signup">Sign Up</a>
+					</li>
+				</ul>
+			</div>
+			<div class="card-body">
+				<form action="/signin" method="post">
+					{% if error %}
+					<div class="mb-3">
+						<div class="alert alert-danger">
+							{{ error }}
+						</div>
+					</div>
+					{% endif %}
+					<div class="mb-3">
+						<label for="inputEmail" class="form-label">Email:</label>
+						<input id="inputEmail" name="email" class="form-control" placeholder="name@example.com" value="user1@example.com">
+					</div>
+					<div class="mb-3">
+						<label for="inputPassword" class="form-label">Password:</label>
+						<input id="inputPassword" name="password" type="password" class="form-control" placeholder="Password" value="password1">
+					</div>
+					<div class="mb-2">
+						<button type="submit" class="btn btn-success w-100">Sign In</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	</div>
+</div>
+{% endblock %}

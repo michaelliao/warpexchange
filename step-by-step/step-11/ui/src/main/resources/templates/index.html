@@ -1,0 +1,656 @@
+{% extends("_base") %}
+
+{% block style %}
+
+<style>
+div.ex-depth {
+	position: absolute;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	opacity: 0.1;
+}
+
+div.ex-depth-sell {
+	background-color: rgb(220, 53, 69);;
+}
+
+div.ex-depth-buy {
+	background-color: rgb(25, 135, 84);
+}
+</style>
+
+{% endblock %}
+
+{% block script %}
+
+<!-- TradingView图表js -->
+<script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+
+<script>
+// 展示的OrderBook最大个数:
+const MAX_ORDERBOOK_ITEMS = 5;
+
+// 展示的最新成交Ticks最大个数:
+const MAX_TICKS = 8;
+
+// 初始化Vue App:
+$(function() {
+	initApp();
+});
+
+// 异步Get请求:
+async function get(path) {
+	return await request('GET', path);
+}
+
+// 异步Post请求:
+async function post(path, params) {
+	return await request('POST', path, JSON.stringify(params));
+}
+
+// 异步请求:
+async function request(method, path, data) {
+	try {
+		return await $.ajax({
+			type: method,
+			url: path,
+			data: data,
+			contentType: 'application/json',
+			dataType: 'json'
+		});
+	} catch (err) {
+		if (err.responseJSON) {
+			throw err.responseJSON;
+		}
+		throw err;
+	}
+}
+
+// 显示错误:
+function showError(msg) {
+	showInfo(msg, true);
+}
+
+// 显示信息:
+function showInfo(msg, err) {
+	let nextId = window._nextNotificationId || 0;
+	window._nextNotificationId = nextId + 1;
+	let notificationId = 'notification' + nextId;
+	let template = $('#notificationTemplate').html().replace('notification', notificationId);
+	console.log(template);
+	$('#notificationContainer').append(template);
+	let $div = $('#' + notificationId);
+	let div = $div.get(0);
+	$div.find('.toast-body').text(msg);
+	if (err) {
+		$div.addClass('bg-danger');
+	} else {
+		$div.addClass('bg-primary');
+	}
+	let t = new bootstrap.Toast(div);
+	t.show();
+	div.addEventListener('hidden.bs.toast', function () {
+		$div.remove();
+	});
+}
+
+// 查找最大的quantity:
+function findMax(buy, sell) {
+	let b = Math.max(...buy.map(item => item.quantity));
+	let s = Math.max(...sell.map(item => item.quantity));
+	return Math.max(b, s);
+}
+
+// 填充OrderBook:
+function fillOrderBook(direction, itemList) {
+	let list = [...itemList];
+	if (list.length > MAX_ORDERBOOK_ITEMS) {
+		list = list.slice(0, MAX_ORDERBOOK_ITEMS);
+	} else if (list.length < MAX_ORDERBOOK_ITEMS) {
+		let missing = MAX_ORDERBOOK_ITEMS - list.length;
+		for (let i=0; i<missing; i++) {
+			list.push({
+				price: NaN,
+				quantity: NaN
+			});
+		}
+	}
+	if (direction === 'SELL') {
+		list.reverse();
+	}
+	return list;
+}
+
+// 填充Ticks:
+function fillTicks(tickList) {
+	let list = [...tickList];
+	list.reverse();
+	if (list.length > MAX_TICKS) {
+		list = list.slice(0, MAX_TICKS);
+	} else if (list.length < MAX_TICKS) {
+		let missing = MAX_TICKS - list.length;
+		for (let i=0; i<missing; i++) {
+			list.push([NaN, NaN, NaN, NaN]);
+		}
+	}
+	return list;
+}
+
+// 显示WebSocket状态:
+function setWsStatus(status) {
+	$('#navStatus .x-ws-status').hide();
+	$('#navStatus .x-ws-' + status).show();
+}
+
+// 关闭WebSocket:
+function closeWebSocket() {
+	if (window.wsNotification) {
+		window.wsNotification.close();
+		window.wsNotification = null;
+	}
+}
+
+// 客户端Timezone时区偏移量(转化为秒):
+const TZ_OFFSET = new Date().getTimezoneOffset() * 60_000;
+
+// 将[timestamp, O, H, L, C, V]转化为Object:
+function toSingleChartData(tohlcv) {
+	return {
+		// 转化为UTC+0表示的时间，因为TradingView按UTC+0处理时间:
+		// https://tradingview.github.io/lightweight-charts/docs/time-zones
+		time: new Date(tohlcv[0] - TZ_OFFSET) / 1000,
+		open: tohlcv[1],
+		high: tohlcv[2],
+		low: tohlcv[3],
+		close:  tohlcv[4]
+	};
+}
+
+// 初始化Chart:
+async function initChart() {
+	// 从REST API获取分钟K:
+	let dataList = [];
+	try {
+		dataList = await get('/api/bars/min');
+	} catch (err) {
+		console.error('load bars failed: ' + err);
+	}
+
+	// 创建Chart:
+	const CHART_HEIGHT = 397;
+	window.chart = LightweightCharts.createChart($('#chart').get(0), {
+		layout: {
+			textColor: 'rgb(33, 37, 41)'
+		},
+		timeScale: {
+			timeVisible: true
+		},
+		height: CHART_HEIGHT
+	});
+
+	// 添加K线图:
+	window.chartCandlestickSeries = window.chart.addCandlestickSeries({
+		upColor: 'rgb(25, 135, 84)',
+		downColor: 'rgb(220, 53, 69)',
+	});
+	window.chartCandlestickSeries.setData(dataList.map(toSingleChartData));
+
+	window.chart.timeScale().fitContent();
+
+	// 自动缩放:
+	window.onresize = (event) => {
+		window.chart.resize($('#chart').width(), CHART_HEIGHT);
+	};
+}
+
+// 初始化WebSocket:
+function initWebSocket() {
+	if (window.wsTimeoutId) {
+		clearTimeout(window.wsTimeoutId);
+		window.wsTimeoutId = undefined;
+	}
+	if (window.wsNotification) {
+		return;
+	}
+	setWsStatus('connecting');
+	// 获取WebSocket Token:
+	post('/websocket/token', '').then(token => {
+		console.log(`websocket token: ${token}`);
+		doInitWebSocket(token);
+	}).catch(err => {
+		console.error(err);
+		doInitWebSocket('');
+	});
+}
+
+function doInitWebSocket(token) {
+	window.wsNotification = new WebSocket('ws://localhost:8006/notification?token=' + token);
+	// 已连接事件:
+	window.wsNotification.onopen = function () {
+		console.log('ws: connected.');
+		setWsStatus('connected');
+	};
+	// 已关闭事件:
+	window.wsNotification.onclose = function () {
+		console.log('ws: disconnected.');
+		setWsStatus('disconnected');
+		closeWebSocket();
+		window.wsTimeoutId = setTimeout(initWebSocket, 10000);
+	};
+	// 错误事件:
+	window.wsNotification.onerror = function () {
+		console.error('ws: error.');
+		setWsStatus('disconnected');
+		closeWebSocket();
+		showError('Unable to connect to WebSocket.');
+		window.wsTimeoutId = setTimeout(initWebSocket, 10000);
+	}
+	// 消息事件:
+	window.wsNotification.onmessage = function (event) {
+		console.log('ws event: ' + event.data);
+		try {
+			// 由Vue App处理消息:
+			window.app.onPush(JSON.parse(event.data)).then(() => console.log('process push ok.')).catch(err => console.error(err));
+		} catch (err) {
+			console.error(err);
+		}
+	};
+}
+
+// 初始化Vue App:
+function initApp() {
+	window.app = new Vue({
+		el: '#app',
+		data: {
+			assets: {
+				BTC: {
+					available: NaN,
+					frozen: NaN
+				},
+				USD: {
+					available: NaN,
+					frozen: NaN
+				}
+			},
+			// 展示Active Orders = true; 展示History Orders = false:
+			showActiveOrders: true,
+			// Active Orders列表:
+			activeOrders: [],
+			// History Orders列表:
+			historyOrders: [],
+			// 创建Order的表单:
+			orderForm: {
+				price: '',
+				quantity: ''
+			},
+			// 最大深度的Quantity:
+			maxDepth: 0,
+			// 订单簿:
+			orderBook: {
+				buy: fillOrderBook('BUY', []),
+				sell: fillOrderBook('SELL', []),
+				price: NaN
+			},
+			// 最新成交:
+			ticks: fillTicks([])
+		},
+		computed: {
+			// 是否可以下单:
+			orderFormReady: function () {
+				return this.orderForm.price !== '' && this.orderForm.quantity != '';
+			}
+		},
+		methods: {
+			// 格式化数字##.##:
+			formatNumber: function (value) {
+				if (isNaN(value)) {
+					return '-';
+				}
+				return value.toFixed(2);
+			},
+			// 格式化时间HH:mm:ss
+			formatTime: function (value) {
+				if (isNaN(value)) {
+					return '-';
+				}
+				let
+					d = new Date(value),
+					h = d.getHours(),
+					m = d.getMinutes(),
+					s = d.getSeconds();
+				return (h < 10 ? '0' : '') + h + ':' + (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+			},
+			// 计算深度占比:
+			depthWidth: function (qty) {
+				if (this.maxDepth > 0 && !isNaN(qty)) {
+					return (100 * qty / this.maxDepth) + '%';
+				}
+				return '0%';
+			},
+			// 调用REST API刷新资产:
+			refreshAssets: async function () {
+				try {
+					this.assets = await get('/api/assets');
+				} catch (err) {
+					return showError(err.message || err.error || 'Error');
+				}
+			},
+			// 调用REST API刷新OrderBook:
+			refreshOrderBook: async function () {
+				try {
+					let book = await get('/api/orderBook');
+					this.orderBook.buy = fillOrderBook('BUY', book.buy);
+					this.orderBook.sell = fillOrderBook('SELL', book.sell);
+					this.maxDepth = findMax(book.buy, book.sell);
+					this.orderBook.price = book.price;
+				} catch (err) {
+					return showError(err);
+				}
+			},
+			// 调用REST API刷新Ticks:
+			refreshTicks: async function () {
+				try {
+					this.ticks = fillTicks(await get('/api/ticks'));
+				} catch (err) {
+					return showError(err);
+				}
+			},
+			// 设置Order Form的Price:
+			setPrice: function (p) {
+				if (!isNaN(p)) {
+					this.orderForm.price = p.toFixed(2);
+				}
+			},
+			// 下单:
+			createOrder: async function (direction) {
+				console.log(`create order: ${direction} ${this.orderForm.price} ${this.orderForm.quantity}`);
+				let order;
+				try {
+					order = await post('/api/orders', {
+						direction: direction,
+						price: this.orderForm.price,
+						quantity: this.orderForm.quantity
+					});
+				} catch (err) {
+					console.error(err);
+					return showError(err.message || err.error || 'Error');
+				}
+				console.log(`created: ${JSON.stringify(order)}`);
+				this.orderForm.quantity = '';
+				// 可以根据返回的Order更新Active Orders列表，这里偷个懒，直接刷新:
+				await this.refreshAssets();
+				await this.refreshActiveOrders();
+			},
+			// 取消订单:
+			cancelOrder: async function (orderId) {
+				console.log(`cancel order ${orderId}`);
+				let order = await post(`/api/orders/${orderId}/cancel`, {});
+				console.log(`cancelled: ${JSON.stringify(order)}`);
+			},
+			// 调用REST API刷新Active Orders:
+			refreshActiveOrders: async function () {
+				try {
+					this.activeOrders = await get('/api/orders');
+				} catch (err) {
+					return showError(err);
+				}
+			},
+			// 调用REST API刷新History Orders:
+			refreshHistoryOrders: async function () {
+				try {
+					this.historyOrders = await get('/api/history/orders');
+				} catch (err) {
+					return showError(err);
+				}
+			},
+			// 处理WebSocket消息:
+			onPush: async function (msg) {
+				if (msg.type === 'orderbook') {
+					// 更新orderbook:
+					this.orderBook.buy = fillOrderBook('BUY', msg.data.buy);
+					this.orderBook.sell = fillOrderBook('SELL', msg.data.sell);
+					this.maxDepth = findMax(msg.data.buy, msg.data.sell);
+					this.orderBook.price = msg.data.price;
+				} else if (msg.type === 'tick') {
+					// 追加tick:
+					let list = [...this.ticks];
+					list.reverse();
+					list.push(...msg.data);
+					this.ticks = fillTicks(list);
+				} else if (msg.type === 'bar') {
+					if (msg.resolution === 'MIN') {
+						console.log('update last bar to ' + msg.data[4]);
+						window.chartCandlestickSeries.update(toSingleChartData(msg.data));
+					}
+				} else if (msg.type === 'order_canceled') {
+					showInfo(`Order ${msg.data.id} canceled.`);
+					await this.refreshAssets();
+					await this.refreshActiveOrders();
+				} else if (msg.type === 'order_matched') {
+					let text = msg.data.status === 'PARTIAL_FILLED' ? `Order ${msg.data.id} was partially filled.` : `Order ${msg.data.id} was fully filled.`
+					showInfo(text);
+					await this.refreshAssets();
+					await this.refreshActiveOrders();
+				} else {
+					console.log(`skip process message type ${msg.type}`);
+				}
+			}
+		},
+		mounted: async function () {
+			await initChart();
+			await this.refreshOrderBook();
+			await this.refreshTicks();
+			await this.refreshAssets();
+			await this.refreshActiveOrders();
+			await this.refreshHistoryOrders();
+			initWebSocket();
+		}
+	});
+}
+</script>
+{% endblock %}
+
+{% block content %}
+<div id="app">
+	<div class="row">
+		<div class="col-sm-6 col-md-4 col-lg-3 bg-red">
+			<div class="card mt-2">
+				<div class="card-header">Balance</div>
+				<div class="card-body">
+					<table class="table table-sm table-hover mb-0" style="font-variant-numeric: tabular-nums">
+						<thead>
+							<tr>
+								<th>Asset</th>
+								<th class="text-end">Available</th>
+								<th class="text-end">Frozen</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>USD</td>
+								<td class="text-end" v-text="formatNumber(assets.USD.available)"></td>
+								<td class="text-end" v-text="formatNumber(assets.USD.frozen)"></td>
+							</tr>
+							<tr>
+								<td>BTC</td>
+								<td class="text-end" v-text="formatNumber(assets.BTC.available)"></td>
+								<td class="text-end" v-text="formatNumber(assets.BTC.frozen)"></td>
+							</tr>
+						<tbody>
+					</table>
+				</div>
+			</div>
+			<div class="card mt-2 mb-2">
+				<div class="card-header">Order Form</div>
+				<div class="card-body">
+					<form>
+						<div class="mb-3">
+							<label for="inputPrice" class="form-label">Price:</label>
+							<input type="number" step="0.01" min="1" id="inputPrice" class="form-control" placeholder="Price" v-model="orderForm.price">
+						</div>
+						<div class="mb-3">
+							<label for="inputQuantity" class="form-label">Quantity:</label>
+							<input type="number" step="0.01" min="0.01" id="inputQuantity" class="form-control" placeholder="Quantity" v-model="orderForm.quantity">
+						</div>
+						<div class="mb-2">
+							<div class="row">
+								<div class="col">
+									<button type="button" class="btn btn-success w-100" v-on:click="createOrder('BUY')" v-bind:disabled="!orderFormReady">Buy</button>
+								</div>
+								<div class="col">
+									<button type="button" class="btn btn-danger w-100" v-on:click="createOrder('SELL')" v-bind:disabled="!orderFormReady">Sell</button>
+								</div>
+							</div>
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+		<div class="col-sm-6 col-md-4 col-lg-6 bg-yellow">
+			<div class="card mt-2">
+				<div class="card-header">Chart</div>
+				<div class="card-body">
+					<div id="chart" style="height: 397px"></div>
+				</div>
+			</div>
+			<div class="card mt-2 mb-2">
+				<div class="card-header">
+					<ul class="nav nav-tabs card-header-tabs">
+						<li class="nav-item">
+							<a class="nav-link" href="#0" v-on:click="showActiveOrders=true" v-bind:class="{'active':showActiveOrders}">Active Orders</a>
+						</li>
+						<li class="nav-item">
+							<a class="nav-link" href="#0" v-on:click="showActiveOrders=false" v-bind:class="{'active':!showActiveOrders}">History Orders</a>
+						</li>
+					</ul>
+				</div>
+				<div class="card-body">
+					<!-- active orders -->
+					<table class="table table-sm table-hover mb-0" style="font-variant-numeric: tabular-nums" v-show="showActiveOrders">
+						<thead>
+							<tr>
+								<th>Direction</th>
+								<th class="text-end">Price</th>
+								<th class="text-end">Quantity</th>
+								<th class="text-end">Unfilled</th>
+								<th class="text-end"><a href="#0" v-on:click="refreshActiveOrders"><i class="bi bi-arrow-clockwise"></i></a></th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr v-for="order in activeOrders" v-bind:class="{'text-success':order.direction==='BUY','text-danger':order.direction==='SELL'}">
+								<td v-text="order.direction"></td>
+								<td class="text-end" v-text="formatNumber(order.price)"></td>
+								<td class="text-end" v-text="formatNumber(order.quantity)"></td>
+								<td class="text-end" v-text="formatNumber(order.unfilledQuantity)"></td>
+								<td class="text-end"><a href="#0" v-on:click="cancelOrder(order.id)">Cancel</a></td>
+							</tr>
+						<tbody>
+					</table>
+					<!-- // active orders -->
+					<!-- history orders -->
+					<table class="table table-sm table-hover mb-0" style="font-variant-numeric: tabular-nums" v-show="!showActiveOrders">
+						<thead>
+							<tr>
+								<th>Direction</th>
+								<th class="text-end">Price</th>
+								<th class="text-end">Quantity</th>
+								<th class="text-end">Unfilled</th>
+								<th class="text-end"><a href="#0" v-on:click="refreshHistoryOrders"><i class="bi bi-arrow-clockwise"></i></a></th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr v-for="order in historyOrders" v-bind:class="{'text-success':order.direction==='BUY','text-danger':order.direction==='SELL'}">
+								<td v-text="order.direction"></td>
+								<td class="text-end" v-text="formatNumber(order.price)"></td>
+								<td class="text-end" v-text="formatNumber(order.quantity)"></td>
+								<td class="text-end" v-text="formatNumber(order.unfilledQuantity)"></td>
+								<td class="text-end" v-text="formatTime(order.updatedAt)"></td>
+							</tr>
+						<tbody>
+					</table>
+					<!-- // active orders -->
+				</div>
+			</div>
+		</div>
+		<div class="col-sm-6 col-md-4 col-lg-3 bg-navy">
+			<div class="card mt-2">
+				<div class="card-header">Order Book</div>
+				<div class="card-body">
+					<table class="table table-sm mb-0" style="font-variant-numeric: tabular-nums">
+						<thead>
+							<tr>
+								<th class="text-end">Price</th>
+								<th class="text-end">Quantity</th>
+							</tr>
+						</thead>
+						<tbody>
+							<tr class="text-danger" v-for="item in orderBook.sell">
+								<td class="text-end">
+									<a href="#0" class="text-decoration-none text-danger" v-on:click="setPrice(item.price)" v-text="formatNumber(item.price)"></a>
+								</td>
+								<td class="text-end" style="position: relative">
+									<div class="ex-depth ex-depth-sell" v-bind:style="{width: depthWidth(item.quantity)}"></div>
+									<span v-text="formatNumber(item.quantity)"></span>
+								</td>
+							</tr>
+							<tr>
+								<td class="text-end">
+									<span v-text="formatNumber(orderBook.price)"></span>
+								</td>
+								<td></td>
+							</tr>
+							<tr class="text-success" v-for="item in orderBook.buy">
+								<td class="text-end">
+									<a href="#0" class="text-decoration-none text-success" v-on:click="setPrice(item.price)" v-text="formatNumber(item.price)"></a>
+								</td>
+								<td class="text-end" style="position: relative">
+									<div class="ex-depth ex-depth-buy" v-bind:style="{width: depthWidth(item.quantity)}"></div>
+									<span v-text="formatNumber(item.quantity)"></span>
+								</td>
+							</tr>
+						<tbody>
+					</table>
+				</div>
+			</div>
+
+			<div class="card mt-2 mb-2">
+				<div class="card-header">Recent Ticks</div>
+				<div class="card-body">
+					<table class="table table-sm table-hover mb-0" style="font-variant-numeric: tabular-nums">
+						<tbody>
+							<tr v-for="tick in ticks" v-bind:class="{'text-danger':tick[1]==0,'text-success':tick[1]==1}">
+								<td class="text-end" v-text="formatTime(tick[0])"></td>
+								<td class="text-end" v-text="formatNumber(tick[2])"></td>
+								<td class="text-end" v-text="formatNumber(tick[3])"></td>
+							</tr>
+						<tbody>
+					</table>
+				</div>
+			</div>
+		</div>
+	</div>
+</div>
+
+<div id="notificationTemplate" style="display:none">
+	<div id="notification" class="toast align-items-center text-white bg-primary border-0" role="alert" aria-live="assertive" aria-atomic="true">
+		<div class="d-flex">
+			<div class="toast-body">
+				订单xxxxxxxx已部分成交，剩余xxxxx。
+			</div>
+			<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+		</div>
+	</div>
+</div>
+
+<div id="notificationContainer" class="toast-container position-fixed bottom-0 start-3 p-3" style="margin-bottom: 64px">
+	<div id="nofity2" class="toast align-items-center text-white border-0" role="alert" aria-live="assertive" aria-atomic="true">
+		<div class="d-flex">
+			<div class="toast-body">
+			</div>
+			<button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
+		</div>
+	</div>
+</div>
+
+{% endblock %}
