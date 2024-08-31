@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: push
+  config:
+    import: configserver:${CONFIG_SERVER:http://localhost:8888}
