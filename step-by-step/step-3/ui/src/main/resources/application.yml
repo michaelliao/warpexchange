@@ -1,0 +1,5 @@
+spring:
+  application:
+    name: ui
+  config:
+    import: configserver:${CONFIG_SERVER:http://localhost:8888}
