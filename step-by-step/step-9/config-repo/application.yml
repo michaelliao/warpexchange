@@ -1,0 +1,94 @@
+# global configurations:
+
+server:
+  tomcat:
+    # default tomcat settings:
+    use-forward-headers: ${TOMCAT_USE_FORWARD_HEADERS:true}
+    protocol-header: ${TOMCAT_PROTOCOL_HEADER:x-forwarded-proto}
+
+exchange:
+  config:
+    order-book-depth: ${ORDER_BOOK_DEPTH:50}
+    debug-mode: ${EXCHANGE_DEBUG_MODE:false}
+    time-zone: ${EXCHANGE_TIME_ZONE:}
+    hmac-key: ${EXCHANGE_HMAC_KEY:ChangeThisHmacKey4ExchangeConfig}
+    session-timeout: ${EXCHANGE_SESSION_TIMEOUT:P3D}
+    api-endpoints:
+      trading-api: ${TRADING_API:http://localhost:8001}
+      trading-engine-api: ${TRADING_ENGINE_API:http://localhost:8002}
+
+  # 风控(See RiskControlService):
+  risk-control:
+    #
+    # 时长配置，格式：标准ISO-8601 Period格式。示例：
+    #
+    # P1D = 1天
+    # P2DT10H = 2天10小时
+    # PT2H30M = 2小时30分
+    # PT60S = 60秒
+    #
+    # 通知消息失效时间(60秒):
+    notify-message-expires: ${NOTIFY_MESSAGE_EXPIRES:PT60S}
+    # 转出消息失效时间(7天):
+    transfer-out-message-expires: ${TRANSFER_OUT_MESSAGE_EXPIRES:P7D}
+  setting:
+    scheduler:
+      cron:
+        reload-trading-metadata: ${CRON_RELOAD_TRADING_METADATA:0 */10 * * * *}
+        # 每10秒钟刷新一次latest-price:
+        update-latest-price: ${CRON_UPDATE_LATEST_PRICE:0,10,20,30,40,50 * * * * *}
+      fixed-delay:
+        flush-orderbook: ${FIXED_DELAY_FLUSH_ORDERBOOK:500}
+        reinvoke-transfer: ${FIXED_DELAY_REINVOKE_TRANSFER:60000}
+        # deprecated:
+        reload-trading-metadata: ${FIXED_DELAY_RELOAD_TRADING_METADATA:600000}
+        save-sequence-id: ${FIXED_DELAY_SAVE_SEQUENCE_ID:60000}
+    # 交易所时区，默认为ZoneId.systemDefault():
+    timezone: ${EXCHANGE_TIMEZONE:}
+    # global 32-random-bytes as AES key:
+    # 全局32个随机ASCII字符作为AES key:
+    aes-key: ${EXCHANGE_AES_KEY:CryptoExchangeAESRandomSecureKey}
+    # 子系统的endpoint设置:
+    endpoint:
+      ui: ${UI_ENDPOINT:http://localhost:8000}
+      meta-api: ${META_API_ENDPOINT:http://localhost:8001}
+      wallet-api: ${WALLET_API_ENDPOINT:http://localhost:8901}
+      spots-api: ${SPOTS_API_ENDPOINT:http://localhost:8101}
+      spots-trading-internal-api: ${SPOTS_TRADING_INTERNAL_API_ENDPOINT:http://localhost:8103}
+
+spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:localhost:9092}
+    consumer:
+      # set consumer group id (blank for auto):
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:}
+      auto-offset-reset: ${KAFKA_CONSUMER_AUTO_OFFSET_RESET:latest}
+      max-poll-records: ${KAFKA_CONSUMER_MAX_POLL_RECORDS:500}
+      max-partition-fetch-bytes: ${KAFKA_MAX_PARTITION_FETCH_BYTES:1000000}
+
+  # redis configuration:
+  redis:
+    host: ${REDIS_HOST:localhost}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    database: ${REDIS_DATABASE:0}
+
+  # datasource:
+  datasource:
+    url: jdbc:mysql://${DB_HOST:localhost}/${DB_NAME:exchange}?useSSL=false&allowMultiQueries=true&useUnicode=true&characterEncoding=utf8
+    username: ${DB_USERNAME:root}
+    password: ${DB_PASSWORD:password}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      auto-commit: false
+      connection-timeout: ${DB_TIMEOUT:3000}
+      validation-timeout: ${DB_TIMEOUT:3000}
+      max-lifetime: 600000
+      maximum-pool-size: ${DB_POOL_MAX:500}
+      minimum-idle: ${DB_POOL_IDEL:1}
+
+logging:
+  level:
+    root: ${LOGGING_ROOT_LEVEL:INFO}
+    org.apache.kafka: ${LOGGING_KAFKA_LEVEL:WARN}
+    com.itranswarp.exchange: ${LOGGING_EXCHANGE_LEVEL:INFO}

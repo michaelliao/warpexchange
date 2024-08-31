@@ -1,0 +1,20 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
+	<modelVersion>4.0.0</modelVersion>
+	<groupId>com.itranswarp.exchange</groupId>
+	<artifactId>build</artifactId>
+	<version>1.0</version>
+	<packaging>pom</packaging>
+	<name>Warp Exchange</name>
+
+	<modules>
+		<module>../common</module>
+		<module>../config</module>
+		<module>../parent</module>
+		<module>../push</module>
+		<module>../quotation</module>
+		<module>../trading-api</module>
+		<module>../trading-engine</module>
+		<module>../trading-sequencer</module>
+		<module>../ui</module>
+	</modules>
+</project>
