@@ -7,4 +7,4 @@ exchange:
 
 logging:
   level:
-    com.itranswarp.exchange: ${LOGGING_EXCHANGE_LEVEL:DEBUG}
+    org.puppylab.exchange: ${LOGGING_EXCHANGE_LEVEL:DEBUG}

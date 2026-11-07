@@ -2,7 +2,7 @@
 	<modelVersion>4.0.0</modelVersion>
 
 	<parent>
-		<groupId>com.itranswarp.exchange</groupId>
+		<groupId>org.puppylab.exchange</groupId>
 		<artifactId>parent</artifactId>
 		<version>1.0</version>
 		<relativePath>../parent/pom.xml</relativePath>
@@ -22,7 +22,7 @@
 		</dependency>
 
 		<dependency>
-			<groupId>com.itranswarp.exchange</groupId>
+			<groupId>org.puppylab.exchange</groupId>
 			<artifactId>common</artifactId>
 			<version>${project.version}</version>
 		</dependency>
